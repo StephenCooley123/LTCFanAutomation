@@ -12,8 +12,10 @@ location = "01056"
 port = 1
 address = 0x76
 api_key = "a500602bf5e44a7e8fc163526231807"
-delay_time_minutes = 0.1
+delay_time_minutes = 30
 log_filename = "test_weather_log_1.log"
+
+avg_with_what_fraction_of_humidity = 0
 
 
 def main():
@@ -126,6 +128,7 @@ def log_data_error(filename, localtime, api_state):
 
 def heat_index(tempf, hum):
     # try simple formula first, if >80, do long formula
+
     hi = 0.5 * (tempf + 61.0 + ((tempf - 68.0) * 1.2) + (hum * 0.094))
 
     if (hi >= 80):
@@ -133,14 +136,15 @@ def heat_index(tempf, hum):
         C1 = [-42.379, 2.04901523, 10.14333127, -0.22475541, -6.83783e-03, -5.481717e-02, 1.22874e-03, 8.5282e-04,
               -1.99e-06]
         hi = C1[0] + (C1[1] * tempf) + (C1[2] * hum) + (C1[3] * tempf * hum) + (C1[4] * tempf ** 2) + (
-                    C1[5] * hum ** 2) + (C1[6] * tempf ** 2 * hum) + (C1[7] * tempf * hum ** 2) + (
-                         C1[8] * tempf ** 2 * hum ** 2)
+                C1[5] * hum ** 2) + (C1[6] * tempf ** 2 * hum) + (C1[7] * tempf * hum ** 2) + (
+                     C1[8] * tempf ** 2 * hum ** 2)
 
         if tempf >= 80 and tempf <= 87 and hum > 85:
             adjustment = ((hum - 85) / 10) * ((87 - tempf) / 5)
             print("Made Adjustment")
             hi += adjustment
 
+    hi = (hi + avg_with_what_fraction_of_humidity * hum) / (1 + avg_with_what_fraction_of_humidity)
     return hi
 
 
