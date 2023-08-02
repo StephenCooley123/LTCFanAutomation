@@ -7,6 +7,7 @@ import json
 import time
 import os
 import datetime
+import math
 
 location = "01056"
 port = 1
@@ -14,23 +15,28 @@ address = 0x76
 api_key = "a500602bf5e44a7e8fc163526231807"
 delay_time_minutes = 30
 log_filename = "test_weather_log_1.log"
+humidity_max = 90
 
 avg_with_what_fraction_of_humidity = 0
 
 
 def main():
+    set_fan_state(0)
     bus = smbus2.SMBus(port)
 
-    calibration_params = bme280.load_calibration_params(bus, address)
+    # calibration_params = bme280.load_calibration_params(bus, address)
     while (1):
         calc_start_time = time.time()
 
-        data = bme280.sample(bus, address, calibration_params)
+        # data = bme280.sample(bus, address, calibration_params)
 
-        temperature_interior = data.temperature * 9 / 5 + 32
-        humidity_interior = data.humidity
+        # temperature_interior = data.temperature * 9 / 5 + 32
+        # humidity_interior = data.humidity
+        # hi_interior = str(heat_index(temperature_interior, humidity_interior))
+
+        temperature_interior = 75
+        humidity_interior = 75
         hi_interior = str(heat_index(temperature_interior, humidity_interior))
-
         print(f"Interior Temperature: {temperature_interior:.2f} F")
         print(f"Interior Humidity: {humidity_interior:.2f} %")
         print("Interior Heat Index: " + hi_interior)
@@ -44,19 +50,29 @@ def main():
             precip_in = data["current"]["precip_in"]
             precip_1hr_in = data["forecast"]["forecastday"][0]["hour"][0]["precip_in"]
             hi_exterior = str(heat_index(temp_f, humidity))
-            print(f"Exterior Temperature temperature: {temp_f}°F")
+
+            next_hour_data = data['forecast']['forecastday'][0]['hour'][1]
+            temperature_1h = next_hour_data['temp_f']
+            humidity_1h = next_hour_data['humidity']
+            dew_point_1h = next_hour_data['dewpoint_f']
+
+            print(f"Exterior Temperature: {temp_f}°F")
             print(f"Exterior Humidity: {humidity}%")
             print(f"Exterior Precipitation: {precip_in} in")
             print(f"Exterior Precipitation 1h forecast: {precip_1hr_in} in")
+            print(f"Predicted 1h temp: {temperature_1h} °F")
+            print(f"Predicted 1h humidity: {humidity_1h}%")
+            print(f"Predicted 1h Dew Point: {dew_point_1h} °F")
             print("Exterior Heat Index: " + hi_exterior)
+            outcome = decide_outcome(heat_index(temperature_interior, humidity_interior),
+                                     heat_index(temperature_1h, humidity_1h),
+                                     precip_in, precip_1hr_in, humidity_1h)
 
-            set_fan_state(
-                decide_outcome(heat_index(temperature_interior, humidity_interior), heat_index(temp_f, humidity),
-                               precip_in, precip_1hr_in))
+            set_fan_state(outcome)
+
             log_data(log_filename, localtime, temperature_interior, humidity_interior, hi_interior, temp_f, humidity,
                      hi_exterior, precip_in, precip_1hr_in,
-                     decide_outcome(heat_index(temperature_interior, humidity_interior), heat_index(temp_f, humidity),
-                                    precip_in, precip_1hr_in))
+                     outcome)
 
         else:
             print("API Failure.")
@@ -128,8 +144,11 @@ def log_data_error(filename, localtime, api_state):
 
 def heat_index(tempf, hum):
     # try simple formula first, if >80, do long formula
+    adjusted_humidity_temperature = 75
+    adjusted_humidity = convert_humidity(tempf, adjusted_humidity_temperature, hum)
 
-    hi = 0.5 * (tempf + 61.0 + ((tempf - 68.0) * 1.2) + (hum * 0.094))
+    hi = (0.5 * (tempf + 61.0 + ((tempf - 68.0) * 1.2) + (hum * 0.094)) + (
+                adjusted_humidity * avg_with_what_fraction_of_humidity)) / (1 + avg_with_what_fraction_of_humidity)
 
     if (hi >= 80):
 
@@ -149,12 +168,37 @@ def heat_index(tempf, hum):
 
 
 # true means turn on fans
-def decide_outcome(hi_interior, hi_exterior, precip, precip_1hr):
-    return (hi_interior > hi_exterior and precip < 0.0001 and precip_1hr < 0.0001)
+def decide_outcome(hi_interior, hi_exterior, precip, precip_1hr, humidity_1h):
+    return humidity_1h < humidity_max and (hi_interior > hi_exterior and precip < 0.0001 and precip_1hr < 0.0001)
 
 
 def set_fan_state(state):
     print("Set to " + str(state))
+
+
+def convert_humidity(temp1, temp2, humidity):
+    """
+    Calculates the relative humidity of the air after changing its temperature.
+    :param temp1: float - initial temperature in Fahrenheit
+    :param temp2: float - final temperature in Fahrenheit
+    :param humidity: float - initial relative humidity
+    :return: float - final relative humidity
+    """
+    # Convert temperatures to Celsius
+    temp1 = (temp1 - 32) * 5 / 9
+    temp2 = (temp2 - 32) * 5 / 9
+
+    # Calculate saturation vapor pressure at initial and final temperatures
+    e1 = 6.112 * math.exp((17.67 * temp1) / (temp1 + 243.5))
+    e2 = 6.112 * math.exp((17.67 * temp2) / (temp2 + 243.5))
+
+    # Calculate actual vapor pressure at initial temperature
+    e = (humidity / 100) * e1
+
+    # Calculate relative humidity at final temperature
+    rh = (e / e2) * 100
+
+    return rh
 
 
 if __name__ == "__main__":
