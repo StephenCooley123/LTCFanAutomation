@@ -12,7 +12,7 @@ import math
 location = "01056"
 port = 1
 address = 0x76
-api_key = "a500602bf5e44a7e8fc163526231807"
+api_key = ""
 delay_time_minutes = 30
 log_filename = "test_weather_log_1.log"
 humidity_max = 90
